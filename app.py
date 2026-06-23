@@ -23,7 +23,7 @@ st.markdown(
 )
 
 # ── Tabs: Single review vs Batch CSV ─────────────────────────────────────────
-tab1, tab2 = st.tabs(["Single Review", "Batch CSV Upload"])
+tab1, tab2, tab3 = st.tabs(["Single Review", "Batch CSV Upload", "Semantic Search"])
 
 
 # ── Helper: display results ───────────────────────────────────────────────────
@@ -154,3 +154,68 @@ with tab2:
                     file_name="review_analysis_results.csv",
                     mime="text/csv",
                 )
+
+# ── Tab 3: Semantic Search ────────────────────────────────────────────────────
+from semantic_search import encode_reviews, search_reviews, get_similarity_label
+
+with tab3:
+    st.markdown(
+        "Search reviews by **meaning**, not keywords. "
+        "Try: *'battery issues'*, *'excellent sound quality'*, *'poor customer service'*"
+    )
+
+    st.subheader("Step 1: Load Reviews")
+    search_source = st.radio(
+        "Choose review source:",
+        ["Use sample_reviews.csv", "Upload your own CSV"],
+        horizontal=True,
+    )
+
+    reviews_for_search = []
+
+    if search_source == "Use sample_reviews.csv":
+        try:
+            df_search = pd.read_csv("sample_reviews.csv")
+            reviews_for_search = df_search["review"].dropna().tolist()
+            st.success(f"Loaded {len(reviews_for_search)} sample reviews.")
+        except FileNotFoundError:
+            st.error("sample_reviews.csv not found in project folder.")
+    else:
+        uploaded_search = st.file_uploader(
+            "Upload CSV with a 'review' column", type=["csv"], key="search_upload"
+        )
+        if uploaded_search:
+            df_search = pd.read_csv(uploaded_search)
+            if "review" not in df_search.columns:
+                st.error("CSV must have a 'review' column.")
+            else:
+                reviews_for_search = df_search["review"].dropna().tolist()
+                st.success(f"Loaded {len(reviews_for_search)} reviews.")
+
+    if reviews_for_search:
+        st.subheader("Step 2: Search")
+
+        query = st.text_input(
+            "Enter your search query:",
+            placeholder="e.g. battery drains too fast",
+        )
+        top_k = st.slider("Number of results", min_value=1, max_value=5, value=3)
+
+        if st.button("Search", type="primary"):
+            if not query.strip():
+                st.warning("Please enter a search query.")
+            else:
+                with st.spinner("Encoding reviews and searching..."):
+                    embeddings = encode_reviews(reviews_for_search)
+                    results = search_reviews(
+                        query, reviews_for_search, embeddings, top_k=top_k
+                    )
+
+                st.subheader(f"Top {len(results)} results for: *'{query}'*")
+
+                for r in results:
+                    similarity_label = get_similarity_label(r["score"])
+                    with st.expander(
+                        f"#{r['rank']}  |  Similarity: {r['score']}%  {similarity_label}"
+                    ):
+                        st.write(r["review"])
